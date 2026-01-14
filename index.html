@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Air Quality Dashboard</title>
+    <style>
+        :root {
+            --bg-color: #f4f7f6;
+            --card-bg: #ffffff;
+            --text-color: #333;
+            --color-1: #2ecc71; --color-2: #f1c40f; --color-3: #e67e22; --color-4: #e74c3c; --color-5: #8e44ad;
+        }
+        body { font-family: 'Segoe UI', sans-serif; background-color: var(--bg-color); color: var(--text-color); display: flex; justify-content: center; padding: 40px; }
+        .container { background: var(--card-bg); padding: 30px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 100%; max-width: 600px; }
+        .search-box { display: flex; gap: 10px; margin-bottom: 20px; }
+        input { flex: 1; padding: 12px; border: 1px solid #ddd; border-radius: 6px; }
+        button { padding: 12px 20px; background: #3498db; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+        .result-header { text-align: center; margin-bottom: 20px; padding: 20px; border-radius: 8px; color: white; display: none; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; display: none; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; }
+        .loading { text-align: center; display: none; margin: 10px; }
+        .error { color: #e74c3c; text-align: center; padding: 10px; background: #fdeaea; border-radius: 6px; display: none; margin-top: 10px; }
+        #locationLabel { text-align: center; font-weight: bold; margin-bottom: 10px; color: #555; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Air Pollution Tracker</h2>
+    <div class="search-box">
+        <input type="text" id="cityInput" placeholder="Enter city name...">
+        <button onclick="fetchAirQuality()">Check Air</button>
+    </div>
+
+    <div id="loader" class="loading">Searching...</div>
+    <div id="errorMessage" class="error"></div>
+    
+    <div id="resultArea">
+        <div id="locationLabel"></div>
+        <div id="statusBanner" class="result-header">
+            <h1 id="qualitativeName">-</h1>
+            <p>Index Score: <span id="indexScore">-</span></p>
+        </div>
+
+        <table id="dataTable">
+            <thead>
+                <tr><th>Pollutant</th><th>Concentration (μg/m³)</th></tr>
+            </thead>
+            <tbody id="pollutantBody"></tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    const API_KEY = '7580816f09f82e737b6b496593353da1';
+
+    async function fetchAirQuality() {
+        const city = document.getElementById('cityInput').value.trim();
+        const loader = document.getElementById('loader');
+        const error = document.getElementById('errorMessage');
+        const banner = document.getElementById('statusBanner');
+        const table = document.getElementById('dataTable');
+        const locLabel = document.getElementById('locationLabel');
+
+        if (!city) return;
+
+        // Reset UI
+        loader.style.display = 'block';
+        error.style.display = 'none';
+        banner.style.display = 'none';
+        table.style.display = 'none';
+        locLabel.innerText = "";
+
+        try {
+            // 1. Geocoding
+            const geoRes = await fetch(`https://api.openweathermap.org/geo/1.0/direct?q=${city}&limit=1&appid=${API_KEY}`);
+            const geoData = await geoRes.json();
+
+            if (!geoData || geoData.length === 0) {
+                throw new Error("City not found. Please check the spelling.");
+            }
+
+            const { lat, lon, name, country } = geoData[0];
+            locLabel.innerText = `Location: ${name}, ${country}`;
+
+            // 2. Pollution Data
+            const pollRes = await fetch(`https://api.openweathermap.org/data/2.5/air_pollution?lat=${lat}&lon=${lon}&appid=${API_KEY}`);
+            if (pollRes.status === 401) throw new Error("API Key is still activating. Try again in a few minutes.");
+            
+            const data = await pollRes.json();
+            updateUI(data.list[0]);
+            table.style.display = 'table';
+
+        } catch (err) {
+            error.innerText = err.message;
+            error.style.display = 'block';
+        } finally {
+            loader.style.display = 'none';
+        }
+    }
+
+    function updateUI(data) {
+        const aqi = data.main.aqi;
+        const comps = data.components;
+        const banner = document.getElementById('statusBanner');
+        
+        const config = {
+            1: { name: "Good", color: "var(--color-1)" },
+            2: { name: "Fair", color: "var(--color-2)" },
+            3: { name: "Moderate", color: "var(--color-3)" },
+            4: { name: "Poor", color: "var(--color-4)" },
+            5: { name: "Very Poor", color: "var(--color-5)" }
+        };
+
+        const current = config[aqi];
+        banner.style.display = 'block';
+        banner.style.backgroundColor = current.color;
+        document.getElementById('qualitativeName').innerText = current.name;
+        document.getElementById('indexScore').innerText = aqi;
+
+        const pollutants = [
+            { label: "SO₂", value: comps.so2 },
+            { label: "NO₂", value: comps.no2 },
+            { label: "PM₁₀", value: comps.pm10 },
+            { label: "PM₂.₅", value: comps.pm2_5 },
+            { label: "O₃", value: comps.o3 },
+            { label: "CO", value: comps.co }
+        ];
+
+        document.getElementById('pollutantBody').innerHTML = pollutants
+            .map(p => `<tr><td>${p.label}</td><td>${p.value.toFixed(2)}</td></tr>`).join('');
+    }
+</script>
+</body>
+</html>
